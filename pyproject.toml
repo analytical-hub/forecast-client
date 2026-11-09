@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forecast-client"
+version = "0.10.0"
+description = "Клиент сервиса прогноза и контракт его API"
+requires-python = ">=3.12"
+# Ставится и в окружения runtimes/ поверх закреплённых версий — только нижние
+# границы
+dependencies = [
+    "httpx>=0.28.1",
+    "pandas>=2.3.1",
+    "pydantic>=2.12.4",
+    "pydantic-settings>=2.12.0",
+    "python-dotenv>=1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# mypy в репозиториях десков проверяет вызовы клиента по его аннотациям
+"forecast_client" = ["py.typed"]
