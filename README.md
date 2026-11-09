@@ -29,12 +29,11 @@ models = ["forecast-sdk"]
 
 [tool.uv]
 # forecast-sdk из платформы тянет клиента из её workspace: переопределение
-# берёт его из зеркала и для аналитика, и для разработчика
-override-dependencies = [
-    "forecast-client @ git+https://github.com/analytical-hub/forecast-client@v0.10.0",
-]
+# берёт его из источника ниже и для аналитика, и для разработчика
+override-dependencies = ["forecast-client"]
 
 [tool.uv.sources]
+forecast-client = { git = "https://github.com/analytical-hub/forecast-client", tag = "v0.10.0" }
 forecast-sdk = { git = "https://github.com/analytical-hub/forecast-platform", tag = "v0.10.0", subdirectory = "sdk" }
 ```
 
