@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pandas as pd
 import pytest
@@ -12,6 +14,7 @@ from forecast_client.exceptions import (
     ServiceUnavailableError,
 )
 from forecast_client.model import DeskModel, Forecast
+from forecast_client.schemas import OutOfRange
 
 HOST = "http://service"
 
@@ -322,6 +325,46 @@ def test_extra_factor_ignored_with_warning(wheat) -> None:
         result = wheat.predict(scenario_frame(Gold=1.0))
 
     assert result.ignored_factors == ["Gold"]
+
+
+# Границы факторов
+
+
+@pytest.mark.parametrize(
+    ("out_of_range", "sent_as"),
+    [
+        (None, "reject"),
+        ("clip", "clip"),
+        (OutOfRange.EXTRAPOLATE, "extrapolate"),
+    ],
+)
+def test_out_of_range_sent(wheat, sent, out_of_range, sent_as) -> None:
+    options = {} if out_of_range is None else {"out_of_range": out_of_range}
+
+    wheat.predict(scenario_frame(), **options)
+
+    assert json.loads(sent[-1].content)["out_of_range"] == sent_as
+
+
+def test_unknown_out_of_range_rejected_before_request(wheat, sent) -> None:
+    with pytest.raises(ValueError, match="ignore"):
+        wheat.predict(scenario_frame(), out_of_range="ignore")
+
+    assert sent == []
+
+
+def test_out_of_range_warnings(wheat, service) -> None:
+    line = "Brent: 150…150 вне границ [0, 120] в 2026-10 — обрезано до границ"
+    service.warnings = [line]
+
+    with pytest.warns(UserWarning, match="обрезано до границ"):
+        result = wheat.predict(scenario_frame(), out_of_range="clip")
+
+    assert result.warnings == (line,)
+
+
+def test_no_bounds_by_default(wheat) -> None:
+    assert wheat.info.bounds == {}
 
 
 @pytest.mark.parametrize(

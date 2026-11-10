@@ -33,6 +33,8 @@ class FakeService:
     def __init__(self, models) -> None:
         self.models = models
         self.sent: list[httpx.Request] = []
+        # предупреждения шлюза о значениях вне границ в каждом прогнозе
+        self.warnings: list[str] = []
 
     def handle(self, request) -> httpx.Response:
         self.sent.append(request)
@@ -128,5 +130,6 @@ class FakeService:
                 "alias": info["alias"],
                 "forecast": forecast,
                 "ignored_factors": sorted(sent - used),
+                "warnings": self.warnings,
             },
         )
