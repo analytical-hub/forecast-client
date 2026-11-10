@@ -15,6 +15,7 @@ from forecast_client.schemas import (
     Frequency,
     ModelAlias,
     ModelInfo,
+    OutOfRange,
     Point,
     Row,
 )
@@ -143,6 +144,8 @@ class Forecast:
     points: list[Point]
     ignored_factors: list[str]
     frequency: Frequency = Frequency.MONTH
+    # значения вне границ модели: обрезаны или экстраполированы
+    warnings: tuple[str, ...] = ()
 
     def __repr__(self) -> str:
         span = f"{self.points[0].period}–{self.points[-1].period}"
@@ -314,18 +317,23 @@ class DeskModel:
         table.index.name = index_name(self.info.frequency)
         return table
 
-    def predict(self, factors) -> Forecast:
+    def predict(self, factors, out_of_range=OutOfRange.REJECT) -> Forecast:
         """
         Прогноз на сценарий факторов.
 
         Parameters:
-            - factors: факторы по периодам — индекс или столбец Date.
+            - factors: факторы по периодам — индекс или столбец Date;
+            - out_of_range: значения вне границ модели (info.bounds) —
+                reject: отклонить, clip: считать при границе, extrapolate:
+                считать как есть.
 
         Returns:
-            Прогноз, версия модели и неиспользованные факторы.
+            Прогноз, версия модели, неиспользованные факторы и предупреждения
+                о значениях вне границ.
 
         Raises:
-            TypeError, ValueError: таблица не годится для запроса;
+            TypeError, ValueError: таблица не годится для запроса,
+                out_of_range не из OutOfRange;
             ForecastRequestError: сервис отклонил сценарий.
         """
 
@@ -334,13 +342,21 @@ class DeskModel:
             self.request(
                 "POST",
                 f"/forecast/{self.desk}/{self.commodity}",
-                {"rows": rows(factors, self.info.frequency)},
+                {
+                    "rows": rows(factors, self.info.frequency),
+                    "out_of_range": OutOfRange(out_of_range).value,
+                },
             ),
         )
         if body.ignored_factors:
             warnings.warn(
                 f"{body.model} не использует факторы: "
                 f"{', '.join(body.ignored_factors)}",
+                stacklevel=2,
+            )
+        if body.warnings:
+            warnings.warn(
+                f"{body.model}: {'; '.join(body.warnings)}",
                 stacklevel=2,
             )
         return Forecast(
@@ -350,6 +366,7 @@ class DeskModel:
             points=body.forecast,
             ignored_factors=body.ignored_factors,
             frequency=self.info.frequency,
+            warnings=tuple(body.warnings),
         )
 
     def close(self) -> None:

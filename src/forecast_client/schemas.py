@@ -64,6 +64,19 @@ class Frequency(StrEnum):
     YEAR = "Y"
 
 
+class OutOfRange(StrEnum):
+    """
+    Что делать со значением фактора вне границ модели.
+
+    reject — отклонить запрос, clip — считать при границе, extrapolate —
+    считать как есть: модель продолжает зависимость за данные.
+    """
+
+    REJECT = "reject"
+    CLIP = "clip"
+    EXTRAPOLATE = "extrapolate"
+
+
 class Row(BaseModel):
     """
     Период прогноза и значения факторов на него.
@@ -84,6 +97,10 @@ class ForecastRequest(BaseModel):
     """
 
     rows: list[Row] = Field(min_length=1, max_length=240)
+    out_of_range: OutOfRange = Field(
+        default=OutOfRange.REJECT,
+        description="Значения факторов вне границ модели",
+    )
 
 
 class Point(BaseModel):
@@ -107,6 +124,10 @@ class ForecastResponse(BaseModel):
     ignored_factors: list[str] = Field(
         description="Факторы запроса, которые модель не использует",
     )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Значения вне границ модели: обрезаны или экстраполированы",
+    )
 
 
 class ModelInfo(BaseModel):
@@ -122,3 +143,7 @@ class ModelInfo(BaseModel):
     frequency: Frequency = Frequency.MONTH
     first_period: str
     factors: list[str]
+    bounds: dict[str, tuple[float, float]] = Field(
+        default_factory=dict,
+        description="Границы факторов: за ними у модели нет данных",
+    )
