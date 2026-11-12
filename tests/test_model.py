@@ -4,6 +4,7 @@ import httpx
 import pandas as pd
 import pytest
 
+import forecast_client
 from fake_gateway import AgroModel
 from forecast_client.exceptions import (
     AuthError,
@@ -13,7 +14,7 @@ from forecast_client.exceptions import (
     ServiceError,
     ServiceUnavailableError,
 )
-from forecast_client.model import DeskModel, Forecast
+from forecast_client.model import DeskModel, Forecast, desks
 from forecast_client.schemas import OutOfRange
 
 HOST = "http://service"
@@ -125,6 +126,18 @@ def test_desk_from_subclass(transport, sent) -> None:
     assert repr(model) == "OilModel(brent v1 @prod, с 2026-09, факторов: 2)"
 
 
+def test_desks_of_service(transport, sent) -> None:
+    assert desks(host=HOST, transport=transport) == ["agro", "oil"]
+    assert [request.url.path for request in sent] == ["/models"]
+
+
+def test_package_exports_entry_points() -> None:
+    assert (forecast_client.DeskModel, forecast_client.desks) == (
+        DeskModel,
+        desks,
+    )
+
+
 @pytest.mark.parametrize(
     "namespace",
     [{}, {"desk": "Agro"}, {"desk": "agro.wheat"}, {"desk": None}],
@@ -230,6 +243,36 @@ def test_api_key_sent_with_every_request(
 
     assert len(sent) == 3
     assert {request.headers["X-API-Key"] for request in sent} == {"secret-key"}
+
+
+def test_api_key_argument_beats_settings(
+    transport,
+    sent,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("FORECAST_API_KEY", "from-settings")
+
+    AgroModel(
+        "wheat",
+        host=HOST,
+        api_key="explicit-key",
+        transport=transport,
+    )
+    AgroModel.available(
+        host=HOST,
+        api_key="explicit-key",
+        transport=transport,
+    )
+    desks(
+        host=HOST,
+        api_key="explicit-key",
+        transport=transport,
+    )
+
+    assert {request.headers["X-API-Key"] for request in sent} == {
+        "explicit-key",
+    }
+    assert len(sent) == 3
 
 
 def test_no_api_key_no_header(transport, sent, monkeypatch) -> None:
@@ -485,7 +528,7 @@ def test_unreachable_service() -> None:
         refused,
     )
 
-    with pytest.raises(ServiceUnavailableError, match="порту 6001"):
+    with pytest.raises(ServiceUnavailableError, match="порт 6001"):
         AgroModel.available(host="http://service:6001", transport=transport)
 
 

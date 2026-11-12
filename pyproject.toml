@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forecast-client"
-version = "0.13.0"
+version = "0.14.0"
 description = "Клиент сервиса прогноза и контракт его API"
 requires-python = ">=3.12"
 # Ставится и в окружения runtimes/ поверх закреплённых версий — только нижние

@@ -42,10 +42,10 @@ def check(
 def catalog(
     http,
     retries,
-    desk,
+    desk=None,
 ) -> list[ModelInfo]:
     """
-    Модели деска, по деску, который вернул сервис.
+    Модели сервиса; с desk — только этого деска, по деску из ответа сервиса.
     """
 
     body = send(
@@ -54,7 +54,37 @@ def catalog(
         "GET",
         "/models",
     )
-    return [parse(ModelInfo, item) for item in body if item.get("desk") == desk]
+    return [
+        parse(ModelInfo, item)
+        for item in body
+        if desk is None or item.get("desk") == desk
+    ]
+
+
+def desks(
+    host=None,
+    api_key=None,
+    transport=None,
+) -> list[str]:
+    """
+    Дески, модели которых сейчас отдаёт сервис.
+
+    Parameters:
+        - host: адрес сервиса; без него — из настроек клиента;
+        - api_key: ключ клиента; без него — из настроек клиента;
+        - transport: транспорт httpx, только для тестов.
+
+    Returns:
+        Имена десков по алфавиту — значения DeskModel.desk.
+    """
+
+    http, retries = connect(
+        host,
+        api_key,
+        transport,
+    )
+    with http:
+        return sorted({info.desk for info in catalog(http, retries)})
 
 
 def periods(index, frequency) -> pd.PeriodIndex:
@@ -180,6 +210,7 @@ class DeskModel:
         - commodity: товар, например wheat;
         - host: адрес сервиса; без него — из настроек клиента;
         - alias: версия модели по алиасу;
+        - api_key: ключ клиента; без него — из настроек клиента;
         - transport: транспорт httpx, только для тестов.
 
     Raises:
@@ -203,6 +234,7 @@ class DeskModel:
         commodity,
         host=None,
         alias=ModelAlias.PROD,
+        api_key=None,
         transport=None,
     ) -> None:
         check(
@@ -217,7 +249,11 @@ class DeskModel:
         )
         self.commodity = commodity
         self.alias = alias
-        self.http, self.retries = connect(host, transport)
+        self.http, self.retries = connect(
+            host,
+            api_key,
+            transport,
+        )
         try:
             self.info = self.refresh()
         except ClientError:
@@ -225,19 +261,29 @@ class DeskModel:
             raise
 
     @classmethod
-    def available(cls, host=None, transport=None) -> list[ModelInfo]:
+    def available(
+        cls,
+        host=None,
+        api_key=None,
+        transport=None,
+    ) -> list[ModelInfo]:
         """
         Модели деска, которые сейчас отдаёт сервис.
 
         Parameters:
             - host: адрес сервиса; без него — из настроек клиента;
+            - api_key: ключ клиента; без него — из настроек клиента;
             - transport: транспорт httpx, только для тестов.
 
         Returns:
             Описания моделей с основным алиасом сервиса.
         """
 
-        http, retries = connect(host, transport)
+        http, retries = connect(
+            host,
+            api_key,
+            transport,
+        )
         with http:
             return catalog(
                 http,

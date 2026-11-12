@@ -14,14 +14,19 @@ from forecast_client.exceptions import (
 from forecast_client.settings import ClientSettings
 
 
-def connect(host, transport) -> tuple[httpx.Client, int]:
+def connect(
+    host,
+    api_key,
+    transport,
+) -> tuple[httpx.Client, int]:
     """
     HTTP-клиент к сервису и число повторов соединения из настроек.
 
-    Ключ клиента из настроек уходит заголовком X-API-Key в каждом запросе.
+    Ключ клиента уходит заголовком X-API-Key в каждом запросе.
 
     Parameters:
         - host: адрес сервиса; без него — из настроек клиента;
+        - api_key: ключ клиента; без него — из настроек клиента;
         - transport: транспорт httpx, только для тестов.
 
     Raises:
@@ -35,9 +40,9 @@ def connect(host, transport) -> tuple[httpx.Client, int]:
             f"адрес сервиса {str(url)!r} должен быть вида http://<host>:<port>"
         )
         raise ValueError(msg)
-    headers: dict[str, str] = {}
-    if settings.api_key is not None:
-        headers["X-API-Key"] = settings.api_key.get_secret_value()
+    if api_key is None and settings.api_key is not None:
+        api_key = settings.api_key.get_secret_value()
+    headers = {} if api_key is None else {"X-API-Key": api_key}
     http = httpx.Client(
         base_url=str(url).rstrip("/"),
         headers=headers,
@@ -80,8 +85,8 @@ def read(response, payload) -> Any:  # noqa: ANN401
 
     if response.status_code == httpx.codes.UNAUTHORIZED:
         msg = (
-            "Сервис прогноза не принял ключ. Проверьте FORECAST_API_KEY в .env "
-            "в корне репозитория деска"
+            "Сервис прогноза не принял ключ. Проверьте api_key или "
+            "FORECAST_API_KEY в окружении или .env"
         )
         raise AuthError(msg)
     try:
@@ -138,8 +143,8 @@ def send(
         return read(response, payload)
     msg = (
         f"Сервис прогноза не отвечает по {http.base_url} ({error}). "
-        "Проверьте FORECAST_URL в .env в корне репозитория деска и доступ к "
-        f"порту {http.base_url.port}: открыт снаружи или проброшен SSH-туннелем"
+        "Проверьте адрес — host или FORECAST_URL — и что порт "
+        f"{http.base_url.port} доступен с этой машины"
     )
     raise ServiceUnavailableError(msg) from error
 

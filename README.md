@@ -1,124 +1,103 @@
-# forecast-client
+# forecast-client — клиент сервиса прогноза analytical-hub
 
-Клиент сервиса прогноза и контракт его API: всё, что нужно, чтобы получить
-прогноз опубликованной модели. Обучать и публиковать модели — `forecast-sdk`.
+forecast-client — Python-библиотека для прогнозов моделей analytical-hub на
+свои сценарии факторов: узнать, какие модели доступны, взять базовый сценарий,
+изменить его и получить прогноз.
 
-| Модуль | Что это |
-|---|---|
-| `forecast_client.schemas` | контракт API: запросы, ответы, описания моделей |
-| `forecast_client.model` | `DeskModel` — клиент моделей деска |
-| `forecast_client.exceptions` | ошибки клиента |
-| `forecast_client.settings` | адрес сервиса, ключ, таймаут и повторы |
+Для работы нужен ключ доступа — его выдаёт владелец сервиса.
 
-Код живёт в `client/` репозитория `forecast-platform`. Репозиторий
-`forecast-client` — его зеркало только для чтения: CI выкладывает туда
-`client/` на каждый тег релиза с тем же тегом. Правки в зеркале руками
-остановят следующую выкладку.
-
-## Установка в репозитории деска
-
-`pyproject.toml` деска:
-
-```toml
-[project]
-dependencies = ["forecast-client"]
-
-[dependency-groups]
-# Разработчику моделей: протокол обучения, publish и forecast env
-models = ["forecast-sdk"]
-
-[tool.uv]
-# forecast-sdk из платформы тянет клиента из её workspace: переопределение
-# берёт его из источника ниже и для аналитика, и для разработчика
-override-dependencies = ["forecast-client"]
-
-[tool.uv.sources]
-forecast-client = { git = "https://github.com/analytical-hub/forecast-client", tag = "v0.10.0" }
-forecast-sdk = { git = "https://github.com/analytical-hub/forecast-platform", tag = "v0.10.0", subdirectory = "sdk" }
-```
-
-- Аналитик: `uv sync` — нужен доступ к репозиторию деска и к `forecast-client`.
-- Разработчик моделей: `uv sync --group models`, затем
-  `uv run forecast env <окружение>` — нужен ещё доступ к `forecast-platform`.
-
-Группа не называется `dev`: её uv ставит по умолчанию. Обновить клиент и SDK —
-сменить оба тега, они всегда одинаковые, затем `uv lock`.
-
-## Клиент деска
-
-Деск объявляет свой клиент один раз — в запросы подставляется только товар:
+## Быстрый старт
 
 ```python
-from forecast_client.model import DeskModel
+from forecast_client import DeskModel, desks
+
+# 1. Какие дески доступны по вашему ключу
+print(desks())  # ['agro', 'oil', ...]
 
 
+# 2. Клиент деска — один раз на деск
 class AgroModel(DeskModel):
     desk = "agro"
+
+
+# 3. Модели деска
+for info in AgroModel.available():
+    print(info.commodity, info.version)  # wheat 4, ...
+
+# 4. Модель и факторы, от которых зависит её прогноз
+wheat = AgroModel("wheat")
+print(wheat.info.factors)  # ['Brent', 'DXY', ...]
+
+# 5. Базовый сценарий — значения факторов по месяцам прогноза — и свой:
+# например, нефть на 10 % дороже базового
+scenario = wheat.scenario()
+scenario["Brent"] *= 1.1
+
+# 6. Прогноз: таблица «месяц → прогноз»
+forecast = wheat.predict(scenario)
+print(forecast.to_frame())
 ```
 
-```python
-AgroModel.available()  # модели деска под prod
-
-with AgroModel("wheat") as model:
-    base = model.scenario()  # базовый сценарий факторов
-    result = model.predict(base)
-    result.to_frame()
-```
-
-Другой алиас — `AgroModel("wheat", alias="challenger")`. Имя деска — латиница,
-цифры и подчёркивание: проверяется при объявлении класса.
-
-## Границы факторов
-
-У модели могут быть границы факторов — `model.info.bounds`, например
-`{"BRENT_REAL": (0.0, 120.0)}`: за ними у модели нет данных. Что делать со
-значением вне границ, решает запрос:
-
-| `out_of_range` | Что делает сервис |
-|---|---|
-| `"reject"` (по умолчанию) | отклоняет сценарий: `ForecastRequestError` с периодом, фактором и значением |
-| `"clip"` | считает при границе: 150 при границах [0, 120] — как 120 |
-| `"extrapolate"` | считает как есть: модель продолжает зависимость за данные |
-
-```python
-result = model.predict(stress, out_of_range="clip")
-result.warnings  # что обрезано или экстраполировано, по факторам и периодам
-```
-
-Предупреждения сервиса приходят и через `warnings.warn`. Сценарий внутри
-границ считается одинаково при любом `out_of_range`.
-
-## Настройки
-
-Переменные окружения или `.env` — он ищется от папки ноутбука вверх, обычно в
-корне репозитория деска:
-
-| Переменная | По умолчанию | Что это |
-|---|---|---|
-| `FORECAST_URL` | `http://localhost:5001` | адрес сервиса прогноза |
-| `FORECAST_API_KEY` | — | ключ клиента, выдаёт администратор сервиса |
-| `FORECAST_TIMEOUT` | `120` | ожидание ответа, с |
-| `FORECAST_RETRIES` | `2` | повторы, если соединение не установилось |
+## Установка
 
 ```bash
-FORECAST_URL=http://<сервер>:5001
+pip install https://github.com/analytical-hub/forecast-client/archive/refs/tags/v0.14.0.zip
+```
+
+Python 3.12+. Аккаунт GitHub и git не нужны; другая версия — другой тег в
+адресе.
+
+## Доступ
+
+Адрес сервиса и ключ — у владельца сервиса. Ключ личный: не передавайте его и
+не кладите в git. Задать их — в окружении или в `.env` рядом с кодом:
+
+```bash
+FORECAST_URL=http://<адрес сервиса>:<порт>
 FORECAST_API_KEY=<ключ>
 ```
 
-Ключ уходит заголовком `X-API-Key` в каждом запросе. Ошибки — подклассы
-`ClientError`:
+или прямо в коде: `AgroModel("wheat", host="http://…", api_key="…")`, так же
+у `desks` и `available`.
 
-| Ошибка | Когда |
-|---|---|
-| `AuthError` | сервис не принял ключ |
-| `RateLimitError` | больше запросов в минуту, чем разрешено ключу; через сколько секунд повторить — `retry_after` |
-| `ModelNotFoundError` | такой модели или алиаса нет на сервисе |
-| `ForecastRequestError` | сервис отклонил сценарий: по пункту на каждую ошибку, в том числе значения вне границ |
-| `ServiceUnavailableError` | сервис не ответил |
-| `ServiceError` | другая ошибка сервиса или ответ не по контракту |
+## Что есть
 
-## Совместимость со шлюзом
+- `desks()` — дески, модели которых отдаёт сервис.
+- `class <Деск>Model(DeskModel): desk = "<деск>"` — клиент деска.
+- `<Деск>Model.available()` — модели деска.
+- `<Деск>Model("<товар>", alias="prod")` — модель; `alias="challenger"` —
+  версия до выкатки.
+- `model.info` — версия, частота (`M` или `Y`), первый период прогноза,
+  факторы, границы факторов.
+- `model.scenario()` — базовый сценарий: `DataFrame` факторов по периодам.
+- `model.predict(factors, out_of_range="reject")` — прогноз; `to_frame()` —
+  таблица со столбцом `forecast`.
 
-Клиент и шлюз связаны контрактом `forecast_client.schemas`. Шлюз выкатывается
-на сервер раньше, чем дески переходят на новый тег клиента: клиент работает со
-шлюзом своего релиза и новее.
+## Сценарий
+
+- Периоды — индекс или столбец `Date`: `2026-09` у помесячной модели, `2026`
+  у годовой; подряд, с `model.info.first_period`.
+- Столбцы — `model.info.factors`, числа без пропусков.
+- Значения вне `model.info.bounds`: `reject` — ошибка, `clip` — считать при
+  границе, `extrapolate` — считать как есть.
+
+## Ошибки
+
+Все — подклассы `ClientError`:
+
+- `AuthError` — сервис не принял ключ;
+- `RateLimitError` — превышен лимит запросов, повторить через `retry_after` с;
+- `ModelNotFoundError` — нет такой модели или алиаса;
+- `ForecastRequestError` — сервис отклонил сценарий, по пункту на ошибку;
+- `ServiceUnavailableError` — сервис не ответил: адрес, порт, сеть.
+
+## Без Python
+
+Сервис — HTTP API с ключом в заголовке `X-API-Key`. Описание и песочница —
+`http://<адрес сервиса>:<порт>/docs`, ключ — кнопкой Authorize.
+
+## Лицензия
+
+Исходный код открыт для ознакомления, использование — по ключу от
+правообладателя: [LICENSE](LICENSE). Репозиторий — зеркало только для чтения:
+issues и pull requests здесь не принимаются.
